@@ -3,10 +3,10 @@ from flask import Blueprint, request, jsonify
 from app.models.models import Payment, FeeInstallment, Student, db
 from datetime import datetime
 
-payment_bp = Blueprint('payment_bp', __name__)
-from flask import Blueprint, request, jsonify
-from app.models.models import Payment, db
-from datetime import datetime
+# payment_bp = Blueprint('payment_bp', __name__)
+# from flask import Blueprint, request, jsonify
+# from app.models.models import Payment, db
+# from datetime import datetime
 
 payment_bp = Blueprint('payment_bp', __name__)
 

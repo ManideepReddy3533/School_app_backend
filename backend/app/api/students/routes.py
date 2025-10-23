@@ -1,7 +1,7 @@
 # # app/api/student/routes.py
 from flask import Blueprint, request, jsonify, current_app, url_for
 from app.models.models import Student, ClassFee, FeeInstallment, Payment, db
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from werkzeug.security import generate_password_hash
 import secrets
 
@@ -208,7 +208,8 @@ def register_student():
     db.session.commit()
 
     # generate payment URL (placeholder)
-    payment_url = url_for('payment.initiate_payment', _external=True, payment_id=payment.id)
+    # payment_url = url_for('payment.initiate_payment', _external=True, payment_id=payment.id)
+    payment_url = url_for('payment_bp.initiate_payment', _external=True, payment_id=payment.id)
 
     # final combined response
     return jsonify(
@@ -224,3 +225,136 @@ def register_student():
             "payment_url": payment_url
         }
     ), 201
+@student_bp.route('/pay/<int:student_id>/<int:term_number>', methods=['POST'])
+def pay_term(student_id, term_number):
+    data = request.get_json()
+    method = data.get('method', 'UPI')
+
+    # Step 1: Fetch student
+    student = Student.query.get(student_id)
+    if not student:
+        return jsonify(msg="Student not found"), 404
+
+    # Step 2: Find installment for that term
+    installment = FeeInstallment.query.filter_by(student_id=student_id, term_number=term_number).first()
+    if not installment:
+        return jsonify(msg="Installment not found"), 404
+
+    if installment.status == 'paid':
+        return jsonify(msg="This term is already paid"), 400
+
+    # Step 3: Create/Update payment
+    payment = Payment.query.filter_by(installment_id=installment.id).first()
+    if not payment:
+        payment = Payment(
+            student_id=student_id,
+            installment_id=installment.id,
+            amount=installment.amount,
+            method=method,
+            status='paid',
+            created_at=datetime.utcnow(),
+            paid_at=datetime.utcnow()
+        )
+        db.session.add(payment)
+    else:
+        payment.status = 'paid'
+        payment.method = method
+        payment.paid_at = datetime.utcnow()
+
+    # Step 4: Update installment status
+    installment.status = 'paid'
+
+    # Step 5: Activate student after first term payment
+    if term_number == 1:
+        student.active = True
+        student.portal_access = True
+
+    db.session.commit()
+
+    return jsonify({
+        "msg": "Payment successful",
+        "payment_id": payment.id,
+        "portal_access": student.portal_access
+    }), 200
+
+# ----------------------------------------------
+# Confirm Term Payment (mock payment success)
+# ----------------------------------------------
+@student_bp.route('/pay/<int:student_id>/<int:term_number>', methods=['POST'])
+def pay_student_term(student_id, term_number):
+    data = request.get_json()
+    method = data.get('method', 'UPI')
+
+    # ✅ Find the student
+    student = Student.query.get(student_id)
+    if not student:
+        return jsonify(msg="Student not found"), 404
+
+    # ✅ Find the fee installment
+    installment = FeeInstallment.query.filter_by(student_id=student_id, term_number=term_number).first()
+    if not installment:
+        return jsonify(msg=f"Installment for term {term_number} not found"), 404
+
+    # ✅ Check if already paid
+    if installment.status == "paid":
+        return jsonify(msg=f"Term {term_number} already paid"), 400
+
+    # ✅ Find or create payment record
+    payment = Payment.query.filter_by(installment_id=installment.id).first()
+    if not payment:
+        payment = Payment(
+            student_id=student.id,
+            installment_id=installment.id,
+            amount=installment.amount,
+            method=method,
+            status="pending"
+        )
+        db.session.add(payment)
+        db.session.flush()
+
+    # ✅ Simulate payment success
+    payment.status = "paid"
+    payment.gateway_reference = f"{method.upper()}_{payment.id}_SUCCESS"
+    payment.paid_at = datetime.utcnow()
+    installment.status = "paid"
+    installment.payment_id = payment.id
+
+    # ✅ Activate portal access if first term paid
+    if term_number == 1:
+        student.portal_access = True
+        student.active = True
+
+    db.session.commit()
+
+    return jsonify(
+        msg="Payment successful",
+        payment_id=payment.id,
+        portal_access=student.portal_access
+    ), 200
+
+@student_bp.route('/payments/<int:student_id>', methods=['GET'])
+def view_payments(student_id):
+    # ✅ Check if student exists
+    student = Student.query.get(student_id)
+    if not student:
+        return jsonify(msg="Student not found"), 404
+
+    # ✅ Fetch all installments for the student
+    installments = FeeInstallment.query.filter_by(student_id=student_id).all()
+    if not installments:
+        return jsonify(msg="No installments found for this student"), 404
+
+    # ✅ Prepare response data
+    data = []
+    for inst in installments:
+        payment = Payment.query.filter_by(installment_id=inst.id).first()
+        data.append({
+            "term_number": inst.term_number,
+            "amount": inst.amount,
+            "due_date": inst.due_date.strftime("%Y-%m-%d") if inst.due_date else None,
+            "status": inst.status,
+            "payment_id": payment.id if payment else None,
+            "payment_status": payment.status if payment else "not_created"
+        })
+
+    return jsonify(payments=data), 200
