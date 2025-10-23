@@ -1,0 +1,30 @@
+# Core Flask framework
+Flask
+
+# Database ORM and migrations
+Flask-SQLAlchemy
+Flask-Migrate
+SQLAlchemy
+
+# Database drivers (choose based on your DB)
+PyMySQL          # For MySQL
+psycopg2-binary # For PostgreSQL
+
+# Authentication & JWT
+Flask-JWT-Extended
+
+# Environment variables
+python-dotenv
+
+# HTTP requests (if needed for API calls)
+requests
+
+# Optional: CORS support for frontend-backend integration
+Flask-Cors
+
+# Optional: Password hashing
+bcrypt
+
+# Optional: Input validation
+marshmallow
+
